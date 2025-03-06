@@ -6,7 +6,6 @@ NOISE = -1        # niose
 class STDBSCAN:
     def __init__(self, eps2, min_samples):
         """
-        初始化 ST-DBSCAN 的参数
         :param eps2: 时间距离的最大差值（如秒、分钟等）
         :param min_samples: 构成核心点的最小点数（包括核心点本身）
         """
