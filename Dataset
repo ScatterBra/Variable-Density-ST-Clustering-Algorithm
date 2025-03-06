@@ -1,0 +1,99 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+# 如果希望每次运行得到相同结果，可以设置随机种子
+np.random.seed(42)
+
+# ---------------------
+# 1. 生成内部高密度点集
+# ---------------------
+N_center = 300  # 内圈点数，可根据需要自行调整
+
+# 随机产生角度（0 ~ 2π）和半径（0 ~ 1）
+angles_center = np.random.uniform(0, 2*np.pi, N_center)
+r_center = np.random.uniform(0, 1, N_center)
+
+# 极坐标 -> 笛卡尔坐标
+lat_center = r_center * np.sin(angles_center)
+lon_center = r_center * np.cos(angles_center)
+
+# 根据 lon 的正负划分左右两半，并赋予不同范围的 meg
+meg_center = np.zeros(N_center, dtype=int)
+for i in range(N_center):
+    if lon_center[i] >= 0:
+        # 右半，meg ∈ [10,15]
+        meg_center[i] = np.random.randint(20, 30)
+    else:
+        # 左半，meg ∈ [1,3]
+        meg_center[i] = np.random.randint(1, 4)
+
+# 将内圈数据暂存为 DataFrame
+df_center = pd.DataFrame({
+    'lat': lat_center,
+    'lon': lon_center,
+    'meg': meg_center
+})
+
+# ---------------------
+# 2. 生成外围低密度圆环
+# ---------------------
+N_ring = 250   # 外圈点数，可根据需要自行调整
+N_arc = N_ring // 3  # 这里简单地按三个扇区平均分配
+
+# 准备存储外圈所有点
+lat_ring_all = []
+lon_ring_all = []
+meg_ring_all = []
+
+def generate_arc_data(n_points, angle_start, angle_end, meg_low, meg_high):
+    """在给定扇区 (angle_start, angle_end) 和 meg 范围内生成 n_points 个点。"""
+    angles = np.random.uniform(angle_start, angle_end, n_points)
+    r = np.random.uniform(3, 4, n_points)  # 外环半径在 [3,4]
+    lat_ring = r * np.sin(angles)
+    lon_ring = r * np.cos(angles)
+    meg_ring = np.random.randint(meg_low, meg_high + 1, n_points)
+    return lat_ring, lon_ring, meg_ring
+
+# 扇区 1：角度 [0, 2π/3], meg ∈ [1, 3]
+lat_arc1, lon_arc1, meg_arc1 = generate_arc_data(N_arc, 0, 2*np.pi/3, 40, 45)
+lat_ring_all.append(lat_arc1)
+lon_ring_all.append(lon_arc1)
+meg_ring_all.append(meg_arc1)
+
+# 扇区 2：角度 [2π/3, 4π/3], meg ∈ [10, 13]
+lat_arc2, lon_arc2, meg_arc2 = generate_arc_data(N_arc, 2*np.pi/3, 4*np.pi/3, 10, 13)
+lat_ring_all.append(lat_arc2)
+lon_ring_all.append(lon_arc2)
+meg_ring_all.append(meg_arc2)
+
+# 扇区 3：角度 [4π/3, 2π], meg ∈ [25, 30]
+# 注意如果 N_ring 不是 3 的整倍数，最后一个扇区可以多放一些点
+N_arc3 = N_ring - 2*N_arc
+lat_arc3, lon_arc3, meg_arc3 = generate_arc_data(N_arc3, 4*np.pi/3, 2*np.pi, 25, 30)
+lat_ring_all.append(lat_arc3)
+lon_ring_all.append(lon_arc3)
+meg_ring_all.append(meg_arc3)
+
+# 合并外圈三段
+lat_ring_all = np.concatenate(lat_ring_all)
+lon_ring_all = np.concatenate(lon_ring_all)
+meg_ring_all = np.concatenate(meg_ring_all)
+
+df_ring = pd.DataFrame({
+    'lat': lat_ring_all,
+    'lon': lon_ring_all,
+    'meg': meg_ring_all
+})
+
+# ---------------------
+# 3. 合并内圈与外圈数据
+# ---------------------
+df = pd.concat([df_center, df_ring], ignore_index=True)
+
+
+# 预览前几行
+print(df.head(10))
+print("总数据量:", len(df))
+
+# 如果需要，将 df 保存为 CSV
+# df.to_csv("data_distribution.csv", index=False)
