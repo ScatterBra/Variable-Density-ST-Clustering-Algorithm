@@ -1,0 +1,114 @@
+import numpy as np
+
+UNASSIGNED = -99  # unvisted
+NOISE = -1        # niose
+
+class STDBSCAN:
+    def __init__(self, eps2, min_samples):
+        """
+        初始化 ST-DBSCAN 的参数
+        :param eps2: 时间距离的最大差值（如秒、分钟等）
+        :param min_samples: 构成核心点的最小点数（包括核心点本身）
+        """
+        self.eps2 = eps2
+        self.min_samples = min_samples
+        self.labels_ = None
+
+    def fit(self, X, T, DL, Rad):
+        """
+        对数据集 X 和时间序列 T 应用 ST-DBSCAN 算法
+        :param X: 空间数据集，形状为 (n_samples, n_features)
+        :param T: 时间序列，形状为 (n_samples,)
+        :param DL: 每个点的密度等级
+        :param Rad: 每个点的邻域半径
+        """
+        n_samples = X.shape[0]
+        # 将所有点设置为 UNASSIGNED 而不是 -1
+        self.labels_ = np.full(n_samples, UNASSIGNED)
+        
+        cluster_id = 0  # 初始化簇 ID
+
+        for i in range(n_samples):
+            # 如果这个点不是 UNASSIGNED，说明已经访问过或被归到某个簇/标记为噪声
+            if self.labels_[i] != UNASSIGNED:
+                continue
+
+            # 获取这个点对应的半径和密度等级
+            rad = Rad[i]
+            dl = DL[i]
+            neighbors = self._region_query(X, T, i, rad, dl, DL)
+
+            # 如果邻域不足 min_samples，则标记为噪声
+            if len(neighbors) < self.min_samples:
+                self.labels_[i] = NOISE
+            else:
+                # 否则，扩展一个新的簇
+                self._expand_cluster(X, T, i, neighbors, cluster_id, DL, Rad)
+                cluster_id += 1
+
+    def _region_query(self, X, T, point_idx, rad, dl, DL):
+        """
+        找到某点的邻域，基于空间和时间特征进行过滤。
+        
+        :param X: 空间数据集，形状为 (n_samples, n_features)
+        :param T: 时间序列，形状为 (n_samples,)
+        :param point_idx: 目标点的索引
+        :param rad: 当前点的邻域半径
+        :param dl: 当前点的密度等级
+        :param DL: 全体点的密度等级
+        :return: 邻域内点的索引列表
+        """
+        neighbors = []
+        for i in range(X.shape[0]):
+            spatial_dist = np.linalg.norm(X[point_idx] - X[i])
+            temporal_dist = abs(T[point_idx] - T[i])
+            # 条件：时间距离满足 eps2，且密度等级相等，空间距离小于等于 rad
+            if temporal_dist <= self.eps2 and dl == DL[i] and spatial_dist <= rad:
+                neighbors.append(i)
+        #print (neighbors)
+        return neighbors
+
+    def _expand_cluster(self, X, T, point_idx, neighbors, cluster_id, DL, Rad):
+        """
+        从核心点扩展簇，加入所有密度可达的点
+        :param X: 空间数据集
+        :param T: 时间序列
+        :param point_idx: 当前核心点的索引
+        :param neighbors: 当前点的邻域点索引列表
+        :param cluster_id: 当前簇的 ID
+        :param DL: 全体点的密度等级
+        :param Rad: 全体点的邻域半径
+        """
+        # 在进入函数前已经检查过min_samples
+        # 先把核心点标记成当前簇
+        self.labels_[point_idx] = cluster_id
+
+        # 将列表转为 set，方便动态更新
+        neighbors_set = set(neighbors)
+
+        # 用于迭代 neighbors_set 的游标（手动模拟“队列”）
+        i = 0
+        # 注意：neighbors_set 的大小在迭代过程中可能动态变化
+        while i < len(neighbors_set):
+            # 获取当前 neighbor 的索引
+            neighbor_idx = list(neighbors_set)[i]
+
+            # 如果它还没被访问过(UNASSIGNED)或者是NOISE，都可以“翻案”成簇成员
+            if self.labels_[neighbor_idx] == UNASSIGNED or self.labels_[neighbor_idx] == NOISE:
+                self.labels_[neighbor_idx] = cluster_id
+
+            # 进一步检查这个邻居是不是核心点
+            # （只有在它还是 UNASSIGNED 或者刚从 NOISE 翻案过来时，才去查）
+            #if self.labels_[neighbor_idx] == cluster_id and DL[neighbor_idx] == DL[point_idx]:
+            if self.labels_[neighbor_idx] == cluster_id:
+                # 获取该邻居点的半径和密度等级
+                n_rad = Rad[neighbor_idx]
+                n_dl = DL[neighbor_idx]
+                n_neighbors = self._region_query(X, T, neighbor_idx, n_rad, n_dl, DL)
+
+                # 如果这个点的邻域也满足核心点条件，则把新邻域并入 neighbors_set
+                if len(n_neighbors) >= self.min_samples:
+                    neighbors_set.update(n_neighbors)
+
+            i += 1
+    
